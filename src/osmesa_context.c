@@ -26,13 +26,40 @@
 //========================================================================
 
 #include "internal.h"
+#include "zomdroid_globals.h"
+#include "zomdroid.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <bits/stdatomic.h>
+
 
 static void makeContextCurrentOSMesa(_GLFWwindow* window)
 {
+#if defined(_GLFW_ZOMDROID)
+    if (window) {
+        ANativeWindow_setBuffersGeometry(_glfw.zomdroid.aNativeWindow, 0, 0, WINDOW_FORMAT_RGBA_8888);
+        ANativeWindow_Buffer* buffer = _glfw.zomdroid.aNativeWindowBuffer;
+        if (ANativeWindow_lock(_glfw.zomdroid.aNativeWindow, buffer, NULL) != 0) {
+            _glfwInputError(GLFW_PLATFORM_ERROR, "Failed to lock native buffer");
+            return;
+        }
+        if (!OSMesaMakeCurrent(window->context.osmesa.handle, buffer->bits, GL_UNSIGNED_BYTE,
+                               buffer->width, buffer->height)) {
+            _glfwInputError(GLFW_PLATFORM_ERROR,
+                            "OSMesa: Failed to make context current");
+            return;
+        }
+
+        OSMesaPixelStore(OSMESA_ROW_LENGTH, buffer->stride);
+        OSMesaPixelStore(OSMESA_Y_UP, 0);
+        if (ANativeWindow_unlockAndPost(_glfw.zomdroid.aNativeWindow) != 0) {
+            _glfwInputError(GLFW_PLATFORM_ERROR, "Failed to unlock and post native buffer");
+            return;
+        }
+    }
+#else
     if (window)
     {
         int width, height;
@@ -61,6 +88,7 @@ static void makeContextCurrentOSMesa(_GLFWwindow* window)
             return;
         }
     }
+#endif
 
     _glfwPlatformSetTls(&_glfw.contextSlot, window);
 }
@@ -88,7 +116,42 @@ static void destroyContextOSMesa(_GLFWwindow* window)
 
 static void swapBuffersOSMesa(_GLFWwindow* window)
 {
-    // No double buffering on OSMesa
+#if defined(_GLFW_ZOMDROID)
+    pthread_mutex_lock(&g_zomdroid_surface.mutex);
+    if (g_zomdroid_surface.is_dirty) {
+        g_zomdroid_surface.is_dirty = false;
+
+        _glfw.zomdroid.aNativeWindow = g_zomdroid_surface.native_window;
+        _glfw.zomdroid.aNativeWindowWidth = g_zomdroid_surface.width;
+        _glfw.zomdroid.aNativeWindowHeight = g_zomdroid_surface.height;
+
+        pthread_mutex_unlock(&g_zomdroid_surface.mutex);
+
+        // finish the frame and signal android ui thread to proceed with surface destruction
+        OSMesaGLFinish();
+        pthread_cond_signal(&g_zomdroid_surface.ready_for_destroy_cond);
+
+        makeContextCurrentOSMesa(window);
+        return;
+    }
+    pthread_mutex_unlock(&g_zomdroid_surface.mutex);
+
+    if (_glfw.zomdroid.aNativeWindow == NULL) { return; }
+
+    ANativeWindow_Buffer* buffer = _glfw.zomdroid.aNativeWindowBuffer;
+    if (ANativeWindow_lock(_glfw.zomdroid.aNativeWindow, buffer, NULL) != 0) {
+        _glfwInputError(GLFW_PLATFORM_ERROR, "Failed to lock native buffer");
+        return;
+    }
+    OSMesaMakeCurrent(window->context.osmesa.handle, buffer->bits, GL_UNSIGNED_BYTE, buffer->width, buffer->height);
+    OSMesaPixelStore(OSMESA_ROW_LENGTH, buffer->stride);
+    OSMesaGLFinish();
+    //OSMesaGLFlush();
+    if (ANativeWindow_unlockAndPost(_glfw.zomdroid.aNativeWindow) != 0) {
+        _glfwInputError(GLFW_PLATFORM_ERROR, "Failed to unlock and post native buffer");
+        return;
+    }
+#endif
 }
 
 static void swapIntervalOSMesa(int interval)
@@ -123,7 +186,7 @@ GLFWbool _glfwInitOSMesa(void)
         "libOSMesa.8.dylib",
 #elif defined(__CYGWIN__)
         "libOSMesa-8.so",
-#elif defined(__OpenBSD__) || defined(__NetBSD__)
+#elif defined(__OpenBSD__) || defined(__NetBSD__) || defined(__ANDROID__)
         "libOSMesa.so",
 #else
         "libOSMesa.so.8",
@@ -169,13 +232,22 @@ GLFWbool _glfwInitOSMesa(void)
         _glfwPlatformGetModuleSymbol(_glfw.osmesa.handle, "OSMesaGetDepthBuffer");
     _glfw.osmesa.GetProcAddress = (PFN_OSMesaGetProcAddress)
         _glfwPlatformGetModuleSymbol(_glfw.osmesa.handle, "OSMesaGetProcAddress");
+    _glfw.osmesa.PixelStore = (PFN_OSMesaPixelStore )
+            _glfwPlatformGetModuleSymbol(_glfw.osmesa.handle, "OSMesaPixelStore");
+    _glfw.osmesa.GLFinish = (PFN_OSMesaGLFinish )
+            _glfwPlatformGetModuleSymbol(_glfw.osmesa.handle, "glFinish");
+    _glfw.osmesa.GLFlush = (PFN_OSMesaGLFlush )
+            _glfwPlatformGetModuleSymbol(_glfw.osmesa.handle, "glFlush");
 
     if (!_glfw.osmesa.CreateContextExt ||
         !_glfw.osmesa.DestroyContext ||
         !_glfw.osmesa.MakeCurrent ||
         !_glfw.osmesa.GetColorBuffer ||
         !_glfw.osmesa.GetDepthBuffer ||
-        !_glfw.osmesa.GetProcAddress)
+        !_glfw.osmesa.GetProcAddress ||
+        !_glfw.osmesa.PixelStore ||
+        !_glfw.osmesa.GLFinish ||
+        !_glfw.osmesa.GLFlush)
     {
         _glfwInputError(GLFW_PLATFORM_ERROR,
                         "OSMesa: Failed to load required entry points");

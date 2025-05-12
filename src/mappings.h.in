@@ -78,5 +78,9 @@ const char* _glfwDefaultMappings[] =
 #if defined(GLFW_BUILD_LINUX_JOYSTICK)
 @GLFW_LINUX_MAPPINGS@
 #endif // GLFW_BUILD_LINUX_JOYSTICK
+
+#if defined(_GLFW_ZOMDROID)
+"00000000000000000000000000000000,Zomdroid Controller,a:b0,b:b1,back:b6,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,leftshoulder:b4,leftstick:b9,lefttrigger:a4,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b10,righttrigger:a5,rightx:a2,righty:a3,start:b7,x:b2,y:b3,platform:Zomdroid,",
+#endif // _GLFW_ZOMDROID
 };
 

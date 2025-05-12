@@ -66,6 +66,9 @@ endif()
 if (GLFW_BUILD_X11)
     message(STATUS "Including X11 support")
 endif()
+if (GLFW_BUILD_ZOMDROID)
+    message(STATUS "Including Zomdroid support")
+endif()
 
 #--------------------------------------------------------------------
 # Apply Microsoft C runtime library option

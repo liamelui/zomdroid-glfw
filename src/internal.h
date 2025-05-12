@@ -101,6 +101,8 @@ typedef struct _GLFWmutex            _GLFWmutex;
 #define GL_CONTEXT_RELEASE_BEHAVIOR_FLUSH 0x82fc
 #define GL_CONTEXT_FLAG_NO_ERROR_BIT_KHR 0x00000008
 
+typedef unsigned char	GLboolean;
+typedef int		GLsizei;
 typedef int GLint;
 typedef unsigned int GLuint;
 typedef unsigned int GLenum;
@@ -252,6 +254,8 @@ typedef EGLSurface (APIENTRY * PFNEGLCREATEPLATFORMWINDOWSURFACEEXTPROC)(EGLDisp
 #define OSMESA_COMPAT_PROFILE 0x35
 #define OSMESA_CONTEXT_MAJOR_VERSION 0x36
 #define OSMESA_CONTEXT_MINOR_VERSION 0x37
+#define OSMESA_ROW_LENGTH	0x10
+#define OSMESA_Y_UP		0x11
 
 typedef void* OSMesaContext;
 typedef void (*OSMESAproc)(void);
@@ -263,6 +267,9 @@ typedef int (GLAPIENTRY * PFN_OSMesaMakeCurrent)(OSMesaContext,void*,int,int,int
 typedef int (GLAPIENTRY * PFN_OSMesaGetColorBuffer)(OSMesaContext,int*,int*,int*,void**);
 typedef int (GLAPIENTRY * PFN_OSMesaGetDepthBuffer)(OSMesaContext,int*,int*,int*,void**);
 typedef GLFWglproc (GLAPIENTRY * PFN_OSMesaGetProcAddress)(const char*);
+typedef void (GLAPIENTRY * PFN_OSMesaPixelStore)(GLint,GLint);
+typedef void (GLAPIENTRY * PFN_OSMesaGLFinish)();
+typedef void (GLAPIENTRY * PFN_OSMesaGLFlush)();
 #define OSMesaCreateContextExt _glfw.osmesa.CreateContextExt
 #define OSMesaCreateContextAttribs _glfw.osmesa.CreateContextAttribs
 #define OSMesaDestroyContext _glfw.osmesa.DestroyContext
@@ -270,6 +277,9 @@ typedef GLFWglproc (GLAPIENTRY * PFN_OSMesaGetProcAddress)(const char*);
 #define OSMesaGetColorBuffer _glfw.osmesa.GetColorBuffer
 #define OSMesaGetDepthBuffer _glfw.osmesa.GetDepthBuffer
 #define OSMesaGetProcAddress _glfw.osmesa.GetProcAddress
+#define OSMesaPixelStore _glfw.osmesa.PixelStore
+#define OSMesaGLFinish _glfw.osmesa.GLFinish
+#define OSMesaGLFlush _glfw.osmesa.GLFlush
 
 #define VK_NULL_HANDLE 0
 
@@ -332,6 +342,23 @@ typedef void (APIENTRY * PFN_vkVoidFunction)(void);
 typedef PFN_vkVoidFunction (APIENTRY * PFN_vkGetInstanceProcAddr)(VkInstance,const char*);
 typedef VkResult (APIENTRY * PFN_vkEnumerateInstanceExtensionProperties)(const char*,uint32_t*,VkExtensionProperties*);
 #define vkGetInstanceProcAddr _glfw.vk.GetInstanceProcAddr
+
+#if defined(_GLFW_ZOMDROID)
+typedef void* ZFAContext;
+
+typedef ZFAContext (GLAPIENTRY * PFN_zfaCreateContext)(GLint, GLint, bool, GLint, GLint);
+typedef void (GLAPIENTRY * PFN_zfaDestroyContext)(ZFAContext);
+typedef bool (GLAPIENTRY * PFN_zfaMakeCurrent)(ZFAContext, struct ANativeWindow*, int width, int height);
+typedef void (GLAPIENTRY * PFN_zfaGLFinish)();
+typedef void (GLAPIENTRY * PFN_zfaGLFlush)();
+typedef void (GLAPIENTRY * PFN_zfaFlushFront)();
+#define zfaCreateContext _glfw.zfa.CreateContext
+#define zfaDestroyContext _glfw.zfa.DestroyContext
+#define zfaMakeCurrent _glfw.zfa.MakeCurrent
+#define zfaGLFinish _glfw.zfa.GLFinish
+#define zfaGLFlush _glfw.zfa.GLFlush
+#define zfaFlushFront _glfw.zfa.FlushFront
+#endif
 
 #include "platform.h"
 
@@ -525,6 +552,12 @@ struct _GLFWcontext
         int             height;
         void*           buffer;
     } osmesa;
+
+#if defined(_GLFW_ZOMDROID)
+    struct {
+        ZFAContext  handle;
+    } zfa;
+#endif
 
     // This is defined in platform.h
     GLFW_PLATFORM_CONTEXT_STATE
@@ -904,6 +937,9 @@ struct _GLFWlibrary
         PFN_OSMesaGetColorBuffer        GetColorBuffer;
         PFN_OSMesaGetDepthBuffer        GetDepthBuffer;
         PFN_OSMesaGetProcAddress        GetProcAddress;
+        PFN_OSMesaPixelStore            PixelStore;
+        PFN_OSMesaGLFinish              GLFinish;
+        PFN_OSMesaGLFlush               GLFlush;
 
     } osmesa;
 
@@ -921,6 +957,19 @@ struct _GLFWlibrary
         GLFWbool        KHR_wayland_surface;
         GLFWbool        EXT_headless_surface;
     } vk;
+
+#if defined(_GLFW_ZOMDROID)
+    struct {
+        void*           handle;
+
+        PFN_zfaCreateContext      CreateContext;
+        PFN_zfaDestroyContext     DestroyContext;
+        PFN_zfaMakeCurrent        MakeCurrent;
+        PFN_zfaGLFinish           GLFinish;
+        PFN_zfaGLFlush            GLFlush;
+        PFN_zfaFlushFront         FlushFront;
+    } zfa;
+#endif
 
     struct {
         GLFWmonitorfun  monitor;
@@ -1055,6 +1104,14 @@ void _glfwTerminateOSMesa(void);
 GLFWbool _glfwCreateContextOSMesa(_GLFWwindow* window,
                                   const _GLFWctxconfig* ctxconfig,
                                   const _GLFWfbconfig* fbconfig);
+
+#if defined(_GLFW_ZOMDROID)
+GLFWbool _glfwInitZfa(void);
+void _glfwTerminateZfa(void);
+GLFWbool _glfwCreateContextZfa(_GLFWwindow* window,
+                               const _GLFWctxconfig* ctxconfig,
+                               const _GLFWfbconfig* fbconfig);
+#endif
 
 GLFWbool _glfwInitVulkan(int mode);
 void _glfwTerminateVulkan(void);

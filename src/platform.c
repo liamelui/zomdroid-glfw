@@ -56,6 +56,9 @@ static const struct
 #if defined(_GLFW_X11)
     { GLFW_PLATFORM_X11, _glfwConnectX11 },
 #endif
+#if defined(_GLFW_ZOMDROID)
+    { GLFW_PLATFORM_ZOMDROID, _glfwConnectZomdroid },
+#endif
 };
 
 GLFWbool _glfwSelectPlatform(int desiredID, _GLFWplatform* platform)
@@ -97,6 +100,10 @@ GLFWbool _glfwSelectPlatform(int desiredID, _GLFWplatform* platform)
                 desiredID = GLFW_PLATFORM_X11;
         }
     }
+#endif
+
+#if defined(_GLFW_ZOMDROID)
+    desiredID = GLFW_PLATFORM_ZOMDROID;
 #endif
 
     if (desiredID == GLFW_ANY_PLATFORM)

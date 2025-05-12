@@ -57,6 +57,14 @@ if (GLFW_BUILD_WAYLAND)
                                 wl_monitor.c wl_window.c)
 endif()
 
+if (GLFW_BUILD_ZOMDROID)
+    target_compile_definitions(glfw PRIVATE _GLFW_ZOMDROID)
+    target_sources(glfw PRIVATE zomdroid_platform.h zomdroid_init.c
+            zomdroid_monitor.c zomdroid_window.c zfa_context.c zomdroid_joystick.h
+            zomdroid_joystick.c)
+endif()
+
+
 if (GLFW_BUILD_X11 OR GLFW_BUILD_WAYLAND)
     if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_sources(glfw PRIVATE linux_joystick.h linux_joystick.c)
