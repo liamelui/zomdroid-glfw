@@ -624,7 +624,7 @@ GLFWbool _glfwCreateContextEGL(_GLFWwindow* window,
         }
     }
 
-    if (_glfw.egl.KHR_create_context)
+    if (_glfw.egl.KHR_create_context && _glfw.platform.platformID != GLFW_PLATFORM_ZOMDROID)
     {
         int mask = 0, flags = 0;
 

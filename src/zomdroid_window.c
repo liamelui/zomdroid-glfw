@@ -38,11 +38,16 @@ GLFWbool _glfwCreateWindowZomdroid(_GLFWwindow* window,
     _glfw.zomdroid.window = window;
 
     if (g_zomdroid_renderer == GL4ES) {
-        // LIAMELUI todo
-/*        if (!_glfwInitEGL())
+
+        if (!_glfwInitEGL())
             return GLFW_FALSE;
-        if (!_glfwCreateContextEGL(window, ctxconfig, fbconfig))
-            return GLFW_FALSE;*/
+
+        _GLFWctxconfig* _ctxconfig = ctxconfig;
+        _ctxconfig->client = GLFW_OPENGL_ES_API;
+        _ctxconfig->major = 2;
+        _ctxconfig->minor = 1;
+        if (!_glfwCreateContextEGL(window, _ctxconfig, fbconfig))
+            return GLFW_FALSE;
 
     } else if (g_zomdroid_renderer == ZINK_OSMESA) {
 
