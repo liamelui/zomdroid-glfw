@@ -26,11 +26,14 @@
 //========================================================================
 
 #include "internal.h"
+#include "glfw/deps/glad/gl.h"
+#include "zomdroid_globals.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <unistd.h>
 
 
 // Return a description of the specified EGL error
@@ -97,10 +100,20 @@ static GLFWbool chooseEGLConfig(const _GLFWctxconfig* ctxconfig,
 
     if (ctxconfig->client == GLFW_OPENGL_ES_API)
     {
-        if (ctxconfig->major == 1)
-            apiBit = EGL_OPENGL_ES_BIT;
-        else
-            apiBit = EGL_OPENGL_ES2_BIT;
+        switch (ctxconfig->major) {
+            case 1:
+                apiBit = EGL_OPENGL_ES_BIT;
+                break;
+            case 2:
+                apiBit = EGL_OPENGL_ES2_BIT;
+                break;
+            case 3:
+                apiBit = EGL_OPENGL_ES3_BIT;
+                break;
+            default:
+                apiBit = EGL_OPENGL_ES_BIT;
+                break;
+        }
     }
     else
         apiBit = EGL_OPENGL_BIT;
@@ -240,6 +253,36 @@ static GLFWbool chooseEGLConfig(const _GLFWctxconfig* ctxconfig,
     return closest != NULL;
 }
 
+void GLAPIENTRY glDebugCallback(
+        GLenum source, GLenum type, GLuint id,
+        GLenum severity, GLsizei length,
+        const char* message, const void *userParam) {
+
+    const char* typeStr =
+            (type == GL_DEBUG_TYPE_ERROR) ? "ERROR" :
+            (type == GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR) ? "DEPRECATED" :
+            (type == GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR) ? "UNDEFINED" :
+            (type == GL_DEBUG_TYPE_PORTABILITY) ? "PORTABILITY" :
+            (type == GL_DEBUG_TYPE_PERFORMANCE) ? "PERFORMANCE" :
+            (type == GL_DEBUG_TYPE_MARKER) ? "MARKER" :
+            (type == GL_DEBUG_TYPE_PUSH_GROUP) ? "PUSH" :
+            (type == GL_DEBUG_TYPE_POP_GROUP) ? "POP" : "OTHER";
+
+    const char* severityStr =
+            (severity == GL_DEBUG_SEVERITY_HIGH) ? "HIGH" :
+            (severity == GL_DEBUG_SEVERITY_MEDIUM) ? "MEDIUM" :
+            (severity == GL_DEBUG_SEVERITY_LOW) ? "LOW" :
+            "NOTIFICATION";
+    switch (type) {
+        case GL_DEBUG_TYPE_PERFORMANCE:
+            break; // not interested in those for now
+        default:
+            printf("GL DEBUG: %s [%s] id=%u msg=%s",
+                   typeStr, severityStr, id, message);
+            break;
+    }
+}
+
 static void makeContextCurrentEGL(_GLFWwindow* window)
 {
     if (window)
@@ -270,6 +313,32 @@ static void makeContextCurrentEGL(_GLFWwindow* window)
     }
 
     _glfwPlatformSetTls(&_glfw.contextSlot, window);
+
+    char* env = getenv("ZOMDROID_DEBUG_GL");
+    bool isDebugGL = env && strcmp(env, "1") == 0;
+    if (isDebugGL && window && window->context.GetString
+            && strstr(window->context.GetString(GL_EXTENSIONS), "GL_KHR_debug")) {
+        printf("GL debug is enabled\n");
+        static PFNGLENABLEPROC glEnable_fn;
+        static PFNGLDEBUGMESSAGECALLBACKPROC glDebugMessageCallback_fn;
+        static PFNGLDEBUGMESSAGECONTROLPROC glDebugMessageControl_fn;
+        static bool once = true;
+        if (once) {
+            glEnable_fn = (PFNGLENABLEPROC)
+                    window->context.getProcAddress("glEnable");
+            glDebugMessageCallback_fn = (PFNGLDEBUGMESSAGECALLBACKPROC)
+                    window->context.getProcAddress("glDebugMessageCallback");
+            glDebugMessageControl_fn = (PFNGLDEBUGMESSAGECONTROLPROC)
+                    window->context.getProcAddress("glDebugMessageControl");
+            once = false;
+        }
+
+        glEnable_fn(GL_DEBUG_OUTPUT);
+        glEnable_fn(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+        glDebugMessageCallback_fn(glDebugCallback, NULL);
+        glDebugMessageControl_fn(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE,0,
+                                 NULL, GL_TRUE);
+    }
 }
 
 static void swapBuffersEGL(_GLFWwindow* window)
@@ -288,6 +357,51 @@ static void swapBuffersEGL(_GLFWwindow* window)
         if (!window->wl.visible)
             return;
     }
+#endif
+
+#if defined(_GLFW_ZOMDROID)
+    pthread_mutex_lock(&g_zomdroid_surface.mutex);
+    if (g_zomdroid_surface.is_dirty) {
+        g_zomdroid_surface.is_dirty = false;
+
+        _glfw.zomdroid.aNativeWindow = g_zomdroid_surface.native_window;
+        _glfw.zomdroid.aNativeWindowWidth = g_zomdroid_surface.width;
+        _glfw.zomdroid.aNativeWindowHeight = g_zomdroid_surface.height;
+
+        pthread_mutex_unlock(&g_zomdroid_surface.mutex);
+        pthread_cond_signal(&g_zomdroid_surface.ready_for_destroy_cond);
+
+        _GLFWfbconfig fbconfig  = _glfw.hints.framebuffer;
+        _GLFWctxconfig ctxconfig = _glfw.hints.context;
+        ctxconfig.client = GLFW_OPENGL_ES_API;
+        ctxconfig.major = atoi(getenv("ZOMDROID_GLES_MAJOR"));
+        ctxconfig.minor = atoi(getenv("ZOMDROID_GLES_MINOR"));
+        EGLConfig config;
+
+        if (!chooseEGLConfig(&ctxconfig, &fbconfig, &config))
+            return;
+
+        if (_glfw.zomdroid.aNativeWindow == NULL) {
+            EGLint pbufferAttribs[] = {
+                    EGL_WIDTH, 1,
+                    EGL_HEIGHT, 1,
+                    EGL_NONE,
+            };
+
+            window->context.egl.surface = eglCreatePbufferSurface(_glfw.egl.display, config, pbufferAttribs);
+        } else {
+            const EGLint surfaceAttribs[] = {
+                    EGL_NONE
+            };
+            window->context.egl.surface = eglCreateWindowSurface(_glfw.egl.display, config, _glfw.zomdroid.aNativeWindow, surfaceAttribs);
+        }
+
+        makeContextCurrentEGL(window);
+        return;
+    }
+    pthread_mutex_unlock(&g_zomdroid_surface.mutex);
+
+    if (_glfw.zomdroid.aNativeWindow == NULL) { return; }
 #endif
 
     eglSwapBuffers(_glfw.egl.display, window->context.egl.surface);

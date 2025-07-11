@@ -44,8 +44,8 @@ GLFWbool _glfwCreateWindowZomdroid(_GLFWwindow* window,
 
         _GLFWctxconfig* _ctxconfig = ctxconfig;
         _ctxconfig->client = GLFW_OPENGL_ES_API;
-        _ctxconfig->major = 2;
-        _ctxconfig->minor = 1;
+        _ctxconfig->major = atoi(getenv("ZOMDROID_GLES_MAJOR"));
+        _ctxconfig->minor = atoi(getenv("ZOMDROID_GLES_MINOR"));
         if (!_glfwCreateContextEGL(window, _ctxconfig, fbconfig))
             return GLFW_FALSE;
 
@@ -71,7 +71,7 @@ GLFWbool _glfwCreateWindowZomdroid(_GLFWwindow* window,
 
 void _glfwDestroyWindowZomdroid(_GLFWwindow* window)
 {
-    UNIMPLEMENTED_API
+    NOOP
 }
 
 void _glfwSetWindowTitleZomdroid(_GLFWwindow* window, const char* title)
